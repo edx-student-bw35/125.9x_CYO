@@ -1,0 +1,1002 @@
+---
+title: 'HarvardX PH125.9x Capstone - CYO - Report'
+author: "b_woods"
+date: "15/11/2020"
+output: pdf_document
+urlcolor: blue
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+# Install required libraries if not already installed
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(cowplot)) install.packages("cowplot", repos = "http://cran.us.r-project.org")
+if(!require(matrixStats)) install.packages("matrixStats", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+
+
+# Import required libraries
+library(tidyverse) # Data manipulation
+library(data.table) # Data storage
+library(cowplot) # Chart layout
+library(matrixStats) # Row based calculations
+library(caret) # Machine learning
+
+
+
+# Import and save required data
+
+# Download data from UCI Machine Learning Repository
+import_file <- tempfile()
+download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/abalone/abalone.data", 
+              import_file)
+
+
+# File does not have column names so manually record these and type of column data
+# Column names taken from 'abalone.names' readme file available at 
+# https://archive.ics.uci.edu/ml/machine-learning-databases/abalone/abalone.names
+import_col_names <- c('sex', 'length', 'diameter', 'height', 'weight_Whole', 
+                      'weight_shucked', 'weight_viscera', 'weight_shell', 
+                      'rings')
+
+
+# Ordered string of column types, f = factor, d = decimal, i = int
+import_col_types <- "fdddddddi" 
+
+
+# Create new dataset from downloaded data with specified column names/types
+abalone <- read_csv(import_file, 
+                    col_names = import_col_names, 
+                    col_types = import_col_types)
+```
+
+
+# Overview
+
+## Introduction
+
+This report is created for the "HarvardX PH125.9x Data Science: Capstone" course on edX, functioning as the second of two capstone projects to complete the program. This report relates to the analysis and development of a machine learning model related to the \href{https://archive.ics.uci.edu/ml/datasets/Abalone}{Abalone Data Set} provided to the UCI Machine Learning Repository by the Marine Research Laboratories in Tasmania, Australia. The model attempts to predict the of an \href{https://www.fish.wa.gov.au/Species/Abalone/Pages/default.aspx}{Abalone}, a type of marine snail, by a number of physical characteristics provided. This model could then be used to predict the age of other Abalone given these characters thereby saving essential research time of science teams.
+
+This dataset was chosen for this report for two reasons:
+
+\begin{itemize}
+\item The dataset was sourced from a location geographically close to where I live and relates to my personal interest in ocean life.
+\item The process for determining age manually is a time consuming task therefore not an optimal use of a scientists time. This project provides an example of how laborious tasks can be semi-automated with the assistance of machine learning, therefore can serve as a reference point for future research.
+\end{itemize}
+
+
+This report contains five main sections:
+
+\begin{itemize}
+\item \textbf{Introduction:} An introduction to the report, dataset and project scope.
+\item \textbf{Analysis:} An analysis of the dataset, methods used to clean the dataset and development of a number of machine learning models for prediction.
+\item \textbf{Results:} Comparison of the machine learning models developed and selection of the most optimal model.
+\item \textbf{Conclusion:} A review of this project and assessment of areas of improvement.
+\item \textbf{Appendix:} References and tools used for this project.
+\end{itemize}
+
+
+This project was completed using the R programming language and a number of libraries relating to data science. This report focuses on the high level approach and outcomes and only shows the code where required - please refer to the accompanying R script to replicate the approaches taken. Alternatively the RMD version of this report also contains the code used to generate the results of this project.
+
+
+--
+
+## Dataset
+
+The Abalone dataset was sourced from the \href{https://archive.ics.uci.edu/ml/datasets/Abalone}{UCI Machine Learning Repository}. It was originally compiled for a non-machine learning study by the Marine Research Laboratories - Taroona, Department of Primary Industry and Fisheries, Tasmania (Australia). The dataset describes a number of physical traits of Abalone. The details provided on UCI state:
+
+\textit{Predicting the age of abalone from physical measurements. The age of abalone is determined by cutting the shell through the cone, staining it, and counting the number of rings through a microscope -- a boring and time-consuming task. Other measurements, which are easier to obtain, are used to predict the age. Further information, such as weather patterns and location (hence food availability) may be required to solve the problem.}
+
+\textit{From the original data examples with missing values were removed (the majority having the predicted value missing), and the ranges of the continuous values have been scaled for use with an ANN (by dividing by 200).}
+- \href{https://archive.ics.uci.edu/ml/datasets/Abalone}{https://archive.ics.uci.edu/ml/datasets/Abalone}
+
+
+The dataset contains ```r dim(abalone)[1]``` rows and ```r dim(abalone)[2]``` columns. An example of the first few rows:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+head(abalone)
+```
+
+The descriptions for each variable is listed in the \href{https://archive.ics.uci.edu/ml/machine-learning-databases/abalone/abalone.names}{Abalone Names} file.
+
+
+
+\begin{center}
+\begin{tabular}{|c | c | c | c |} 
+\hline
+\textbf{Name}    &   \textbf{Data Type}   &   \textbf{Measurement}   &   \textbf{Description} \\ [0.5ex] 
+\hline
+Sex   &   Nominal   &   -   &   M, F, and I (infant) \\
+\hline
+Length    &   Continuous    &   mm    &   Longest shell measurement \\
+\hline
+Diameter    &   Continuous    &   mm    &   perpendicular to length \\
+\hline
+Height    &   Continuous    &   mm    &   with meat in shell \\
+\hline
+Whole weight    &	Continuous    &   grams   &   whole abalone \\
+\hline
+Shucked weight    &   Continuous    &   grams   &   weight of meat \\
+\hline
+Viscera weight    &   Continuous    &   grams   &   gut weight (after bleeding) \\
+\hline
+Shell weight    &   Continuous    &   grams   &   after being dried \\
+\hline
+Rings   &   Integer   &   -   &   +1.5 gives the age in years \\
+\hline
+\end{tabular}
+\end{center}
+
+
+Note that the dataset does not have an 'age' value. The age of an Abalone is determined by adding 1.5 to it's rings value. During data cleaning a new variable will be created for age, which will be the dependent variable in the machine learning models generated.
+
+
+## Project Structure and Goals
+
+The aim of this project is to predict the age of an Abalone given a number of physical characteristics and to evaluate the accuracy of this prediction. There are two general methods for approaching this problem:
+
+
+\begin{itemize}
+\item \textbf{Classification} - Where the physical characteristics are used to classify the dataset into discrete age groups.
+\item \textbf{Regression}  - Where the age is treated as a continuous value and the physical characteristics measured as factors that influence that continuous value.
+\end{itemize}
+
+While the project could appear as a classification problem due to a set number of categories, this project will instead treat this as a regression problem for a number of reasons:
+
+\begin{itemize}
+\item There are a total of ```r length(unique(abalone$rings))``` age values (i.e. categories). For a dataset with only ```r dim(abalone)[1]``` rows, classification becomes more challenging. This is compounded by uneven age distribution, outlined in a later section.
+\item Age itself is a continuous variable and instead of expecting a prediction to match an exact value, having a continuous value means the predication can be measured within by how closely the range relates to the actual value.
+\end{itemize}
+
+As a regression problem, the accuracy of the prediction will be measured by the Root Mean Squared Error (RMSE) - which measures how much an average sample deviates from the predicted value. No target RMSE will be set, instead the aim is to compare RMSE among different machine learning models to determine the lowest value model, then evaluate the distribution and any patterns of the predicted age relative to the actual age value.
+
+\newpage 
+
+# Analysis
+
+## Data Exploration
+
+There are no NA values in the dataset. Summary statistics for the dataset:
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+summary(abalone)
+
+```
+\bigskip
+
+Distribution of rings is roughly normally distrusted with a mean around 10 rings, though the tail to the right extends into much larger values.
+
+\medskip
+```{r echo=FALSE, message=FALSE, warning=FALSE,  out.width="90%"}
+
+abalone %>%
+  ggplot(aes(rings)) +
+  geom_histogram(binwidth=1, fill="#2931d6", color="#e9ecef", alpha=0.9) +
+  ggtitle("Rings distribution")
+
+```
+
+\newpage 
+
+There are three categories of Sex - Male, Female and Infant. Female and infant have similar record counts with the male count being a little larger.
+
+\medskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE,  out.width="85%"}
+
+abalone %>%
+  ggplot(aes(sex)) +
+  geom_bar(fill="#2931d6", color="#e9ecef") +
+  ggtitle("Sex distribution")
+
+```
+
+
+\medskip
+
+Distribution of rings per sex show male and female having similar distributions, with infant being smaller, which is expected as rings is related to age. There are a large number of outliers relating to high values while few smaller outliers.
+
+\medskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE,  out.width="85%"}
+
+abalone %>%
+  ggplot(aes(sex, rings, colour = sex)) +
+  geom_boxplot() +
+  ggtitle("Rings distribution per sex")
+
+```
+
+\newpage 
+
+Length and diameter have a similar distribution; both seem to be roughly normally distributed and share a right skew. 
+
+\medskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+plot_length_dist <- abalone %>%
+  ggplot(aes(length)) +
+  geom_histogram(fill="#2931d6", color="#e9ecef", bins = 30) +
+  ggtitle("Length distribution")
+
+plot_diameter_dist <- abalone %>%
+  ggplot(aes(diameter)) +
+  geom_histogram(fill="#2931d6", color="#e9ecef", bins = 30) +
+  ggtitle("Diameter distribution")
+
+plot_grid(plot_length_dist, plot_diameter_dist)
+
+```
+
+\medskip
+
+Rings distribution by length or diameter have a similar general shape. Infants take up the majority of the smaller range while the larger range is split between males and females. A small number of outliers in the upper ranges.
+
+\medskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+
+plot_length_comp <- abalone %>%
+  ggplot(aes(length, rings, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Rings distribution by length")
+
+plot_length_diameter <- abalone %>%
+  ggplot(aes(diameter, rings, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Rings distribution by diameter")
+
+plot_grid(plot_length_comp, plot_length_diameter) # Display graphs together
+```
+
+\newpage 
+
+Diameter and length have a clear linear relationship. The range of deviation increases as the values increase. Infant abalone have a smaller range of deviation but more notable outliers than adult Abalone.
+
+\medskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+abalone %>%
+  ggplot(aes(diameter, length, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Diameter to length comparison")
+
+```
+
+\medskip
+
+Abalone height distribution has a limited range of values having a roughly normal distribution centered around 0.2. Note there are ```r abalone %>% filter(height == 0) %>% summarize(height_zero = n()) %>% pull(height_zero) ``` records with a height of 0, which will need to be removed as this is invalid data.
+
+\medskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+abalone %>%
+  ggplot(aes(height)) +
+  geom_histogram(fill="#2931d6", color="#e9ecef", binwidth = .01) +
+  ggtitle("Height distribution")
+
+```
+
+\newpage 
+
+
+Comparing ring distribution by height shows a similar relationship - a relatively small range with a symmetric distribution that starts to break up in higher ring counts. Note the extreme height outliers in the 10 rings range.
+
+\medskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+abalone %>%
+  ggplot(aes(height, rings, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Rings distribution by height")
+
+```
+
+\newpage 
+
+There are four different weight types - Whole, shucked, viscera and shell. The general shape of each distribution is similar with a clear right skew. Shucked weight seems to relate most directly to whole weight based on the shape and value similarity, however there is a clear distinction between each component.
+
+\bigskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+plot_weight_whole_dist <- abalone %>%
+  ggplot(aes(weight_Whole)) +
+  geom_histogram(fill="#2931d6", color="#e9ecef", bins = 30) +
+  ggtitle("Whole weight distribution")
+
+plot_weight_shucked_dist <- abalone %>%
+  ggplot(aes(weight_shucked)) +
+  geom_histogram(fill="#2931d6", color="#e9ecef", bins = 30) +
+  ggtitle("Shucked weight distribution")
+
+plot_weight_viscera_dist <- abalone %>%
+  ggplot(aes(weight_viscera)) +
+  geom_histogram(fill="#2931d6", color="#e9ecef", bins = 30) +
+  ggtitle("Viscera weight distribution")
+
+plot_weight_shell_dist <- abalone %>%
+  ggplot(aes(weight_shell)) +
+  geom_histogram(fill="#2931d6", color="#e9ecef", bins = 30) +
+  ggtitle("Shell weight distribution")
+
+# Display graphs together
+plot_grid(plot_weight_whole_dist,  
+          plot_weight_shucked_dist,
+          plot_weight_viscera_dist,
+          plot_weight_shell_dist)
+
+
+```
+
+
+\newpage 
+
+The relationship between whole weight and the weight sub-components is confirmed by plotting these against each other. This is a clear linear relationship though the linearity starts to diverge when the values are larger, similar to the height vs diameter relationship. Note how the pattern of outliers in larger values varies considerably between different comparisons.
+
+\bigskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+plot_weight_comp_shucked <- abalone %>%
+  ggplot(aes(weight_shucked, weight_Whole, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Shucked weight to whole weight comparison")
+
+plot_weight_comp_viscera <- abalone %>%
+  ggplot(aes(weight_viscera, weight_Whole, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Viscera weight to whole weight comparison")
+
+plot_weight_comp_shell <- abalone %>%
+  ggplot(aes(weight_shell, weight_Whole, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Shell weight to whole weight comparison")
+
+# Display graphs together
+plot_grid(plot_weight_comp_shucked,
+          plot_weight_comp_viscera,
+          plot_weight_comp_shell)
+          
+```          
+
+
+
+\newpage 
+
+Comparing rings and the different weight types shows a roughly linear relationship, though the range of linearity has far more divergence than when comparing ring count with other values. The shape between the ring vs weight type distribution is roughly similar between all four types, though again the higher ring count values have much more variance.
+
+\bigskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+plot_weight_Whole_comp <- abalone %>%
+  ggplot(aes(weight_Whole, rings, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Rings distribution by whole weight")
+
+plot_weight_shucked_comp <- abalone %>%
+  ggplot(aes(weight_shucked, rings, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Rings distribution by shucked weight")
+
+plot_weight_viscera_comp <- abalone %>%
+  ggplot(aes(weight_viscera, rings, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Rings distribution by viscera weight")
+
+plot_weight_shell_comp <- abalone %>%
+  ggplot(aes(weight_shell, rings, colour = sex)) +
+  geom_point(alpha = .6) +
+  ggtitle("Rings distribution by shell weight")
+
+# Display graphs together
+plot_grid(plot_weight_Whole_comp, 
+          plot_weight_shucked_comp,
+          plot_weight_viscera_comp,
+          plot_weight_shell_comp)
+```
+
+
+\bigskip
+
+## Insights
+
+From this data analysis, a number of insights can be drawn from the data:
+
+\begin{itemize}
+\item The data is generally normally distributed and has a linear relationship between the rings (i.e. age) and the physical characteristics.
+\item There are a number of records with 0 height which will need to be removed as this is invalid data.
+\item The structure of the data becomes less consistent at higher ring counts, which could lead to inconsistencies modeling across this range.
+\item Likewise while some values such as length and diameter are closely correlated, for records with a higher ring count the correlation is less consistent. For this reason all values should be used in the model.
+\item The dataset being a relatively small count (~4000 rows) for a large prediction space could lower the accuracy of the model.
+\item As the variables are physical measurements of the Abalone, the model will fail to take into account other potential impacts such as differences in geography. This is outlined in the original dataset details and in the first section of this report.
+\end{itemize}
+
+
+\newpage 
+
+## Data Cleaning
+
+Prior to building the model, a cleaned dataset is created with three changes:
+
+\begin{itemize}
+\item Records with a Height of 0 are removed.
+\item A new column is created for Age, which will be the dependent variable when modeling. Age is equivalent to rings + 1.5
+\item As Age is now within the dataset, Rings is no longer required, so is removed from the dataset.
+\end{itemize}
+
+```{r message=FALSE, warning=FALSE}
+
+abalone_clean <- abalone %>%
+  filter(height != 0) %>%
+  mutate(age = rings + 1.5) %>%
+  select(-rings)
+
+```
+
+
+In order to test without overfitting, the data is split into a train and test set. The train set is used to develop the model while the test set is only used for testing each of the models. The split ration is 75% train and 25% test, which gives ~3000 records for training and ~1000 testing. As the dataset is quite small a larger ratio is preferred to ensure more accurate testing while still making the majority of records available for training.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(1, sample.kind="Rounding") # Use a common seed value for reproducibility
+abalone_clean_test_index <- createDataPartition(y = abalone_clean$sex, times = 1,
+                                                p = .25, list = FALSE)
+
+abalone_clean_train <- abalone_clean[-abalone_clean_test_index,]
+temp <- abalone_clean[abalone_clean_test_index,]
+
+# Ensure age values in the test set also exist in the train set
+abalone_clean_test <- temp %>% 
+  semi_join(abalone_clean_train, by = "age")
+
+removed <- anti_join(temp, abalone_clean_test, by = "age")
+abalone_clean_train <- rbind(abalone_clean_train, removed)
+          
+```
+
+\newpage 
+
+## Model Development
+
+A number of different machine learning algorithms have been used to create an optional model. This section outlines the creation of these models, training the model and testing using the test data set to determine the RMSE of that model. Model results are analyzed and compared in the Results section.
+
+As a baseline, determine the mean age in the training dataset and calculate the RMSE of just using this single value. While this is not a detailed or reliable model, it provides a point of reference for comparing the RMSE values in more complex models.
+
+```{r message=FALSE, warning=FALSE}
+
+train_mean_age <- mean(abalone_clean_train$age)
+rmse_mean <- RMSE(train_mean_age, abalone_clean_test$age)
+cat("RMSE for mean only:", rmse_mean)
+
+# Create a storage table for tracking different RMSE values
+rmse_results <- tibble(method = "Mean Only", 
+                       RMSE = rmse_mean)
+
+          
+```
+
+This indicates that Abalone age values deviate from the age by an average of ```r rmse_mean```. The following models attempt to improve this score.
+
+
+### 1) Linear Model
+
+A linear attempts to create a linear relationship between the dependent variable and the predictors. This is relevant where the data itself shows a linear relationship, which was observed in the Data Exploration section.
+
+As with proceeding models, age is the predicted value using all other variables in the train dataset. All models will also use 10 fold cross validation to improve evaluation.
+
+
+```{r message=FALSE, warning=FALSE}
+
+lm_control <- trainControl(method = "cv", number = 10) # Cross validation
+train_lm <- train(age ~ .,
+               data = abalone_clean_train,
+               method = "lm",
+               trControl = lm_control)
+          
+```
+
+The model builds a linear model based on how the predictors relate to Age:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+train_lm$finalModel
+          
+```
+
+The Residuals vs Fitted graph shows how the model relates to the values in the training set.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+plot(train_lm$finalModel, which = 1) 
+          
+```
+
+The QQ plot of this confirms the earlier insight that the data is roughly normally distributed but diverges more in upper ranges.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+plot(train_lm$finalModel, which = 2) 
+          
+```
+
+The trained model is then applied to the test set to determine the RMSE.
+
+
+```{r message=FALSE, warning=FALSE}
+# Test the linear model against the test data set
+y_hat_lm <- predict(train_lm, abalone_clean_test)
+
+# Calculate RMSE and add to reference table
+rmse_lm <- RMSE(y_hat_lm, abalone_clean_test$age)
+rmse_results <- add_row(rmse_results,
+                        method = "Linear Model", 
+                        RMSE = rmse_lm)
+
+cat("RMSE for Linear Model:", rmse_lm)
+          
+```
+
+
+The RMSE of ```r rmse_lm ``` is a clear improvement over the pure mean value of ```r rmse_mean```. Plotting the actual age values in the test set against the predicted age values shows a linear pattern which again diverges in the upper ranges.
+
+
+```{r message=FALSE, warning=FALSE, out.width="85%"}
+plot(y_hat_lm, abalone_clean_test$age)
+          
+```
+
+\newpage 
+
+### 2) K Nearest Neighbors (KNN)
+
+KNN uses the value of surrounding data points to determine a data points predicted value. This operates under the idea that similar values share characteristics and this relationship can be used for prediction. KNN has been chosen as the distribution examined in the Data Exploration section show a number of patterns between Abalone which share physical characteristics, therefore KNN could be used to determine an Abalone's age by examining similar Abalone.
+
+As KNN references surrounding values, the number of surrounding values, referred to as K, must be provided. As the optimal K is unknown a series of values between 1 and 25 are provided to test with.
+
+
+```{r message=FALSE, warning=FALSE}
+
+knn_control <- trainControl(method = "cv", number = 10, p = .8) # Cross validation
+knn_tunegrid <- data.frame(k = seq(1, 25, 1)) # Determine optimal K between 1 and 25
+
+train_knn <- train(age ~ ., 
+                   method = "knn", 
+                   data = abalone_clean_train,
+                   tuneGrid = knn_tunegrid,
+                   control = knn_control
+                   )
+          
+```
+
+Plotting the series of K values and the corrosponding RMSE within the train set shows an optimal K value of ```r train_knn$bestTune %>% pull()```.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+plot(train_knn)
+          
+```
+
+The trained model can then be applied to the test set to predict the Age value.
+
+```{r message=FALSE, warning=FALSE}
+
+y_hat_knn <- predict(train_knn, abalone_clean_test)
+
+# Calculate RMSE and add to reference table
+rmse_knn <- RMSE(y_hat_knn, abalone_clean_test$age)
+rmse_results <- add_row(rmse_results,
+                        method = "KNN", 
+                        RMSE = rmse_knn)
+
+cat("RMSE for KNN:", rmse_knn)
+          
+```
+
+The RMSE of ```r rmse_knn``` is very close to the LM RMSE of ```r rmse_lm```. Plotting the relationship between actual age and predicted KNN age shows a very different distribution - the values are far more spread out though a clear linear pattern is still shown.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+plot(y_hat_knn, abalone_clean_test$age)
+          
+```
+
+
+\newpage            
+                   
+
+### 3) Random Forest
+
+Random Forests work by creating a decision tree from a sample of the data and repeating this process a large number of times, essentially creating a collection of decision random decisions trees (hence the name, Random Forest). The values from these decision trees are then aggregated to create a final model for prediction. Random Forest is selected here as it offers high accuracy by determining in how different ranges of variables can be used for prediction.
+
+Train a Random Forest model:
+
+```{r message=FALSE, warning=FALSE}
+
+rf_control <- trainControl(method="cv", number = 10) # Cross validation
+
+train_rf <- train(age ~ ., 
+                  method = "rf", 
+                  data = abalone_clean_train,
+                  trControl = rf_control
+)
+```
+
+
+The trained model shows the lowest RMSE within the train set when ```r train_rf$bestTune %>% pull()``` randomly selected predictors are used for training the mode.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+plot(train_rf)
+```
+
+
+The Random Forest model can then be used for prediction:
+
+```{r message=FALSE, warning=FALSE}
+
+y_hat_rf<- predict(train_rf, abalone_clean_test)
+
+# calculate RMSE and add to reference table
+rmse_rf <- RMSE(y_hat_rf, abalone_clean_test$age)
+rmse_results <- add_row(rmse_results, 
+                        method = "RF", 
+                        RMSE = rmse_rf)
+
+cat("RMSE for Random Forest:", rmse_rf)
+
+```
+
+The RMSE of ```r rmse_rf``` for the Random Forest model  is similar to the RMSE of the KNN (```r rmse_knn```) and LM models (```r rmse_lm```). However the distribution of actual age to predicted age is again different - this is more spread out then LM but more condensed than KNN.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+plot(y_hat_rf, abalone_clean_test$age)
+
+```
+
+\newpage 
+
+
+### 4) Ensemble Models
+
+Each of the models produced have similar RMSE values when used for predictions on the test dataset, however the distributions of these predictions vary between models. This indicates each model has it's own strengths and weaknesses and combining these models could produce a model with further accuracy. This is referred to as an ensemble model and two different ensemble models will be built:
+
+
+\begin{itemize}
+\item \textbf{Mean Based Ensemble:} For each record, take the three predicted values from the other models and determine the mean value, which will be the predicted value. This ensemble is useful when the models predict a general range of values so the ensemble will take the middle value of that range.
+\item \textbf{Median Based Ensemble:} For each record, take the three predicted values from the other models and determine the median value, which will be the predicted value. This ensemble is useful when there are large variances in the prediction data therefore the middle value will be chosen as this is more likely to be a standard prediction.
+\end{itemize}
+
+
+Firstly create a dataset containing all three predictions then source the mean of each row, using this for prediction.
+
+```{r message=FALSE, warning=FALSE}
+predctions_combined <- 
+  tibble(lm = y_hat_lm, 
+         knn = y_hat_knn, 
+         rf = y_hat_rf) 
+
+
+# First ensemble is the mean of all three predictions
+ensemble_mean <- rowMeans(predctions_combined)
+
+
+# calculate RMSE and add to reference table
+rmse_ensemble_mean <- RMSE(ensemble_mean, abalone_clean_test$age)
+rmse_results <- add_row(rmse_results, 
+                        method = "Ensemble - Mean", 
+                        RMSE = rmse_ensemble_mean)
+
+cat("RMSE for Ensemble - Mean:", rmse_ensemble_mean)
+
+```
+
+The RMSE of the Mean Ensemble is ```r rmse_ensemble_mean ``` which is far lower than the previous models, indicating the ensemble approach boosts the overall accuracy compared to individual models. The distribution plot of actual age to predicted age also looks like a combination of the previous models.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+plot(ensemble_mean, abalone_clean_test$age)
+
+```
+
+This method can is also applied for the median ensemble model approach:
+
+```{r message=FALSE, warning=FALSE}
+
+ensemble_median <- rowMedians(as.matrix(predctions_combined))
+
+# calculate RMSE and add to reference table
+rmse_ensemble_median <- RMSE(ensemble_median, abalone_clean_test$age)
+rmse_results <- add_row(rmse_results,
+                        method = "Ensemble - Median", 
+                        RMSE = rmse_ensemble_median)
+
+cat("RMSE for Ensemble - Median:", rmse_ensemble_median)
+          
+```
+
+The results and actual age to predicted age distribution are very similar to the mean ensemble.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="85%"}
+
+plot(ensemble_median, abalone_clean_test$age)
+          
+```
+
+\bigskip
+
+
+
+# Results
+
+
+## Model Comparison
+
+All the models developed have a lower RMSE than the mean, indicating they have potential for prediction. All three single models have very similar RMSE values, while the ensemble models both have lower RMSE values. The ensemble models are also very close together with the mean ensemble having a slightly lower RMSE.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+ rmse_results         
+
+```
+
+\newpage 
+
+Comparing the individual models predicted age to the actual age side by side shows the difference in distribution. They all have similar general shapes but differ in how spread out the predictions are in different places - comparing the plotted values to the gray line of expected value confirms this. The fourth graph shows each of these models overlaid - the center of the model is shared among all the graphs but the outliers are handled differently. This comes back to the earlier point of how much the physical characters of Abalone differ in older Abalone and how this could lead to inaccuracy in the prediction model.
+
+\bigskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+combined_results <- 
+  tibble(actual_age = abalone_clean_test$age,
+         lm = y_hat_lm,
+         knn = y_hat_knn, 
+         rf = y_hat_rf,
+         ens_mean = ensemble_mean,
+         ens_median = ensemble_median 
+  )
+
+
+
+
+# Compare the predicted value and the real value for each of the single models
+# Include a simple line with a slope of 1 to each graph for comparison
+
+# Actual age vs linear model predicted age
+graph_actual_predicted_lm <- combined_results %>% 
+  ggplot(aes(actual_age, lm)) +
+  geom_abline(intercept = 0, slope = 1, color="#878787", size = 1.5, alpha = .5) +
+  geom_point(colour = "#4dbb24", alpha = .6) +
+  ggtitle("Actual Age vs Linear Model Prediction") +
+  ylab("Linear Model Prediction") +
+  xlab("Actual Age")
+
+# Actual age vs KNN predicted age
+graph_actual_predicted_knn <- combined_results %>% 
+  ggplot(aes(actual_age, knn)) +
+  geom_abline(intercept = 0, slope = 1, color="#878787", size = 1.5, alpha = .5) +
+  geom_point(colour = "#2e5ac4", alpha = .6) +
+  ggtitle("Actual Age vs KNN Prediction") +
+  ylab("KNN Predictions") +
+  xlab("Actual Age")
+
+# Actual age vs Random Forest predictions
+graph_actual_predicted_rf <- combined_results %>% 
+  ggplot(aes(actual_age, rf)) +
+  geom_abline(intercept = 0, slope = 1, color="#878787", size = 1.5, alpha = .5) +
+  geom_point(colour = "#f1ba1b", alpha = .6) +
+  ggtitle("Actual Age vs Random Forest Prediction") +
+  ylab("Random Forest Predictions") +
+  xlab("Actual Age")
+
+# Overlay the above graphs in a single graph to indicate central and shared outliers
+graph_actual_predicted_combined <- combined_results %>% 
+  ggplot() +
+  geom_abline(intercept = 0, slope = 1, color="#878787", size = 1.5, alpha = .5) +
+  geom_point(aes(actual_age, lm), colour = "#4dbb24", alpha = .3) +
+  geom_point(aes(actual_age, knn), colour = "#2e5ac4", alpha = .3) +
+  geom_point(aes(actual_age, rf), colour = "#f1ba1b", alpha = .3) +
+  geom_line(aes(1,1))+
+  ggtitle("Actual Age vs Predictions Overlayed") +
+  ylab("Predictions Overlayed") +
+  xlab("Actual Age")
+
+# Display all four graphs together for comparison
+# Each model has a general linear contour but differs in the distribution
+# Most deviation when actual age is higher
+plot_grid(
+  graph_actual_predicted_lm,
+  graph_actual_predicted_knn,
+  graph_actual_predicted_rf,
+  graph_actual_predicted_combined
+  )
+
+```
+
+
+\newpage 
+
+Plotting the ensemble models in the same method shows how similar their distributions are. The linear relationship here appears more clearly and there appears to be a little less scattering in the upper ranges.
+
+\bigskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Mean ensemble
+graph_actual_predicted_mean <- combined_results %>% 
+  ggplot(aes(actual_age, ens_mean)) +
+  geom_abline(intercept = 0, slope = 1, color="#878787", size = 1.5, alpha = .5) +
+  geom_point(colour = "#2e5ac4", alpha = .6) +
+  ggtitle("Actual Age vs Mean Ensemble Prediction") +
+  ylab("Mean Ensemble Prediction") +
+  xlab("Actual Age")
+
+
+# Median ensemble
+graph_actual_predicted_median <- combined_results %>% 
+  ggplot(aes(actual_age, ens_median)) +
+  geom_abline(intercept = 0, slope = 1, color="#878787", size = 1.5, alpha = .5) +
+  geom_point(colour = "#4dbb24", alpha = .6) +
+  ggtitle("Actual Age vs Median Ensemble Prediction") +
+  ylab("Median Ensemble Prediction") +
+  xlab("Actual Age")
+
+
+# Compare median and mean models
+# Very similar distribution and share share same deviation when age is higher
+plot_grid(
+  graph_actual_predicted_mean,
+  graph_actual_predicted_median
+)
+          
+```
+
+\newpage 
+
+The upper range outliers can be further analyzed by comparing the spread of range across the actual age and the predicted ages. The actual age shows a large number of high outliers which are not captured effectively by the other models - the closest is LM but this still does not cover the full range. LM also has large outliers in the lower ranges which are not present in the actual age or other models. KNN has the smallest range, possibly due to the large K value meaning less spread in the data. Random Forest condenses the upper outliers into a smaller range than the other models - this may be due to the decision trees focusing more on the center of the data so the outliers are pulled towards the center.
+
+The ensemble models shape is also represented appropriately as these appear to capture characteristics of the spread of each of the other models. The median model has a little more upper range whereas the mean model captures the lower outliers more accurately. The median and quartiles of the models are all very close, though these are all a little higher than the actual age - possibly due to uneven spread of data causing the center to be off in the predicted models.
+
+\bigskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+combined_results %>%
+  pivot_longer(.,
+               cols = c(actual_age, lm, knn, rf, ens_mean, ens_median),
+               names_to = "variable", 
+               values_to = "value") %>%
+  
+  ggplot(aes(variable, value, colour = variable)) +
+  geom_boxplot() +
+  ggtitle("Spread of Age") +
+  ylab("Age") +
+  xlab("Source")
+```
+
+\bigskip
+
+Both ensemble models are worthy choices and both have their advantages and disadvantages while being quite similar. Either could be chosen as the final and modifying the makeup of the ensemble or adding further data points could affect the decision. However given this dataset and results the final model selected is the mean model, as the RMSE is slightly lower and the age distribution seems a little more centered. 
+
+\newpage 
+
+
+## Final Model Distribtution
+
+The summary statistics of the actual age, predicted age and difference between these two values are presented below.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create a new dataset containing just the actual_age, predicted_age and summary statistics
+final_model_results <- combined_results %>%
+  select(actual_age, predicted_age = ens_mean) %>%
+  mutate(age_diff = actual_age - predicted_age) 
+
+
+# Summary statistics of the final model
+summary(final_model_results)
+```
+
+\bigskip
+
+Comparing the distribution of predicted age (blue) and actual age (silver) shows the main difference between the distributions - the actual values are more spread out while predicted values are more centered. The center for predicted is also 2 years higher, matching the RMSE value.
+
+\bigskip
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+final_model_results %>%
+  ggplot() +
+  geom_histogram(aes(actual_age), fill = "#aaaaaa", alpha = .6, binwidth = 1) +
+  geom_histogram(aes(predicted_age), fill = "#2e5ac4", alpha = .6, binwidth = 1) +
+  ggtitle("Mean Ensemble Predicted Age vs Actual Age") +
+  xlab("Age (Blue = Predicted, Silver = Actual)") +
+  ylab("Count")
+
+```
+
+\newpage 
+
+Graphing the counts of age difference shows a roughly normal distribution centered around 0, though the distribution is also left skewed, showing far more differences in the higher positive ranges - representing the large age outliers which were not accurately predicted by the mean ensemble model.
+
+\bigskip
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+final_model_results %>%
+  ggplot(aes(age_diff)) +
+  geom_histogram(fill = "#2e5ac4", alpha = .7, binwidth = .5) +
+  ggtitle("Actual - Predicted Age Differences") +
+  xlab("Age Difference") +
+  ylab("Count")
+          
+```
+
+
+\newpage 
+
+
+# Conclusion
+
+In conclusions, the analysis of Abalone data provided insight which lead to the development of a number of machine learning models. While each had their strengths and weaknesses, the Mean Ensemble model was the final choice as it was able to combine the strengths of the individual models to create the most reliable prediction model. The model did suffer from it's inability to handle outliers in the large range and having all the predictors focus on the physical characteristics of the Abalone rather than it's environment. The final RMSE of this model is ```r rmse_ensemble_mean```, meaning that when provided with the physical characteristics of an Abalone, the age can be predicted within an average range of ```r rmse_ensemble_mean```years. Such a model could reduce the amount of time scientists have to spend preparing samples for experiment data, or to act as a baseline for the development of a more complex mode.
+
+There are a number of potential areas of improvement for this model:
+
+\begin{itemize}
+\item \textbf{Additional data sources:} The variables in this dataset relate to physical characteristics of the Abalone. Alone this may not be enough to accurately determine age - for example as outlined in the dataset details the geography or food sources could provide valuable insight for prediction.
+\item \textbf{Larger data set:} For a scientific dataset, ~4000 records of Abalone physical characteristics is an impressive dataset that would have taken considerable resources to collate. However for a machine learning project, this may not be enough. This is particularly true with how the models developed struggled with estimates of Abalone with outlier characteristics, which could be better estimated with more data in that range.
+\item \textbf{Improved ML algorithms:} This project only tested three machine learning models which may not be the most optimal models for this dataset. More research into different models could lead to better model selection. Likewise in these actual models better tuning could improve the prediction capability.
+\item \textbf{More complex ensemble:} Further to the previous point, with better models or better tuning, the ensemble could better combine the strengths of performing models and minimize the weaknesses of models that under-perform in some situations.
+\end{itemize}
+
+As a personal reflection, this project was the first time I've built machine learning models under my own direction and I feel the outcome has been successful. I was fortunate to find a dataset related to my interests which also matched the areas studied in this course. The project highlighted the effectiveness of ensemble models and this is an area I would like to continue researching in the future. I feel my weakness when developing these models was a lack of tuning - testing different tuning methods often lead to under-performance compared to the default settings. I plan to spend more time learning how tuning options relate to the models better so future work can be more optimized towards the dataset being studied.
+
+\newpage 
+
+
+# Appendix
+
+## References
+
+Courses.edx.org. 2020. Course | PH125.8X | Edx. [online] Available at: <https://courses.edx.org/courses/course-v1:HarvardX+PH125.8x+2T2020/course/> [Accessed 01 November 2020].
+
+Courses.edx.org. 2020. Course | PH125.9X | Edx. [online] Available at: <https://courses.edx.org/courses/course-v1:HarvardX+PH125.9x+2T2020/course/> [Accessed 01 November 2020].
+
+Irizarry, R., 2020. Chapter 32 Machine learning in practice | Introduction To Data Science. [online] Rafalab.github.io. Available at: <https://rafalab.github.io/dsbook/machine-learning-in-practice.html> [Accessed 01 November 2020].
+
+
+Archive.ics.uci.edu. 2020. UCI Machine Learning Repository: Abalone Data Set. [online] Available at: <https://archive.ics.uci.edu/ml/datasets/Abalone> [Accessed 1 November 2020].
+
+
+Fish.wa.gov.au. 2020. Abalone. [online] Available at: <https://www.fish.wa.gov.au/Species/Abalone/Pages/default.aspx> [Accessed 1 November 2020].
+
+Technical Tidbits From Spatial Analysis & Data Science. 2020. Predictive Modeling And Machine Learning In R With The Caret Package. [online] Available at: <http://zevross.com/blog/2017/09/19/predictive-modeling-and-machine-learning-in-r-with-the-caret-package/> [Accessed 1 November 2020].
+
+
+## Libraries Used
+
+
+\begin{itemize}
+\item \textbf{tidyverse 1.3.0} Data manipulation and charting.
+\item \textbf{data.table 1.13.0} Data storage.
+\item \textbf{cowplot 1.1.0} Arranging charts.
+\item \textbf{matrixStats 0.57.0} Row based calculations.
+\item \textbf{caret 6.0-86} Machine learning.
+\end{itemize}
+
+
+
+## Programming Environment
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+version 
+          
+```
+
